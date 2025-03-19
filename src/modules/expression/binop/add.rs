@@ -1,9 +1,13 @@
 use heraclitus_compiler::prelude::*;
+use crate::docs::module::DocumentationModule;
+use crate::{handle_binop, error_type_match};
+use crate::modules::expression::expr::Expr;
 use crate::translate::compute::{translate_computation, ArithOp};
 use crate::utils::{ParserMetadata, TranslateMetadata};
 use crate::translate::module::TranslateModule;
-use super::{super::expr::Expr, parse_left_expr, expression_arms_of_type};
 use crate::modules::types::{Typed, Type};
+
+use super::BinOp;
 
 #[derive(Debug, Clone)]
 pub struct Add {
@@ -18,6 +22,21 @@ impl Typed for Add {
     }
 }
 
+impl BinOp for Add {
+    fn set_left(&mut self, left: Expr) {
+        self.left = Box::new(left);
+    }
+
+    fn set_right(&mut self, right: Expr) {
+        self.right = Box::new(right);
+    }
+
+    fn parse_operator(&mut self, meta: &mut ParserMetadata) -> SyntaxResult {
+        token(meta, "+")?;
+        Ok(())
+    }
+}
+
 impl SyntaxModule<ParserMetadata> for Add {
     syntax_name!("Add");
 
@@ -25,20 +44,16 @@ impl SyntaxModule<ParserMetadata> for Add {
         Add {
             left: Box::new(Expr::new()),
             right: Box::new(Expr::new()),
-            kind: Type::Null
+            kind: Type::default()
         }
     }
 
     fn parse(&mut self, meta: &mut ParserMetadata) -> SyntaxResult {
-        parse_left_expr(meta, &mut self.left, "+")?;
-        let tok = meta.get_current_token();
-        token(meta, "+")?;
-        syntax(meta, &mut *self.right)?;
-        let l_type = self.left.get_type();
-        let r_type = self.right.get_type();
-        let message = format!("Cannot add value of type '{l_type}' with value of type '{r_type}'");
-        let predicate = |kind| matches!(kind, Type::Num | Type::Text | Type::Array(_));
-        self.kind = expression_arms_of_type(meta, &l_type, &r_type, predicate, tok, &message)?;
+        self.kind = handle_binop!(meta, "add", self.left, self.right, [
+            Num,
+            Text,
+            Array
+        ])?;
         Ok(())
     }
 }
@@ -47,15 +62,23 @@ impl TranslateModule for Add {
     fn translate(&self, meta: &mut TranslateMetadata) -> String {
         let left = self.left.translate_eval(meta, false);
         let right = self.right.translate_eval(meta, false);
-        let quote = meta.gen_quote();
         match self.kind {
             Type::Array(_) => {
-                let id = meta.gen_array_id();
-                meta.stmt_queue.push_back(format!("__AMBER_ARRAY_ADD_{id}=({left} {right})"));
-                format!("{quote}${{__AMBER_ARRAY_ADD_{id}[@]}}{quote}")
+                let quote = meta.gen_quote();
+                let dollar = meta.gen_dollar();
+                let id = meta.gen_value_id();
+                let name = format!("__AMBER_ARRAY_ADD_{id}");
+                meta.stmt_queue.push_back(format!("{name}=({left} {right})"));
+                format!("{quote}{dollar}{{{name}[@]}}{quote}")
             },
             Type::Text => format!("{}{}", left, right),
             _ => translate_computation(meta, ArithOp::Add, Some(left), Some(right))
         }
+    }
+}
+
+impl DocumentationModule for Add {
+    fn document(&self, _meta: &ParserMetadata) -> String {
+        "".to_string()
     }
 }

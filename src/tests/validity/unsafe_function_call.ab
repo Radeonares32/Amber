@@ -1,0 +1,11 @@
+// Output
+// 6, 0
+
+fun safe_division(a: Num, b: Num): Num? {
+    if b == 0:
+        fail 1
+    return a / b
+}
+
+let result = trust safe_division(24, 4)
+echo "{result}, {status}"

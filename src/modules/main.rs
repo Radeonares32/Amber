@@ -1,4 +1,5 @@
 use heraclitus_compiler::prelude::*;
+use crate::docs::module::DocumentationModule;
 use crate::translate::module::TranslateModule;
 use crate::utils::{ParserMetadata, TranslateMetadata};
 use crate::modules::types::Type;
@@ -43,15 +44,15 @@ impl SyntaxModule<ParserMetadata> for Main {
             }
             token(meta, "{")?;
             // Create a new scope for variables
-            meta.push_scope();
-            // Create variables
-            for arg in self.args.iter() {
-                meta.add_var(arg, Type::Array(Box::new(Type::Text)));
-            }
-            // Parse the block
-            syntax(meta, &mut self.block)?;
-            // Remove the scope made for variables
-            meta.pop_scope();
+            meta.with_push_scope(|meta| {
+                // Create variables
+                for arg in self.args.iter() {
+                    meta.add_var(arg, Type::Array(Box::new(Type::Text)), true);
+                }
+                // Parse the block
+                syntax(meta, &mut self.block)?;
+                Ok(())
+            })?;
             token(meta, "}")?;
             meta.context.is_main_ctx = false;
             Ok(())
@@ -69,10 +70,16 @@ impl TranslateModule for Main {
             let quote = meta.gen_quote();
             let dollar = meta.gen_dollar();
             let args = self.args.clone().map_or_else(
-                || String::new(),
-                |name| format!("{name}=({quote}{dollar}@{quote})")
+                String::new,
+                |name| format!("declare -r {name}=({quote}{dollar}0{quote} {quote}{dollar}@{quote})")
             );
             format!("{args}\n{}", self.block.translate(meta))
         }
+    }
+}
+
+impl DocumentationModule for Main {
+    fn document(&self, _meta: &ParserMetadata) -> String {
+        "".to_string()
     }
 }

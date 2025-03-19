@@ -1,53 +1,53 @@
 use heraclitus_compiler::prelude::*;
 use itertools::Itertools;
+use crate::docs::module::DocumentationModule;
 use crate::utils::metadata::{ParserMetadata, TranslateMetadata};
-use crate::modules::expression::expr::Expr;
+use crate::modules::expression::expr::{Expr, ExprType};
 use crate::translate::module::TranslateModule;
 use crate::modules::variable::{
     init::VariableInit,
-    set::VariableSet
+    set::VariableSet,
 };
-use crate::modules::command::{
-    statement::CommandStatement,
-    modifier::CommandModifier
-};
+use crate::modules::command::modifier::CommandModifier;
 use crate::handle_types;
 use crate::modules::condition::{
     ifchain::IfChain,
-    ifcond::IfCondition
+    ifcond::IfCondition,
 };
 use crate::modules::shorthand::{
     add::ShorthandAdd,
     sub::ShorthandSub,
     mul::ShorthandMul,
     div::ShorthandDiv,
-    modulo::ShorthandModulo
+    modulo::ShorthandModulo,
 };
 use crate::modules::loops::{
     infinite_loop::InfiniteLoop,
     iter_loop::IterLoop,
     break_stmt::Break,
-    continue_stmt::Continue
+    continue_stmt::Continue,
 };
 use crate::modules::function::{
     declaration::FunctionDeclaration,
     ret::Return,
-    fail::Fail
+    fail::Fail,
 };
-use crate::modules::imports::{
-    import::Import
-};
+use crate::modules::imports::import::Import;
 use crate::modules::main::Main;
 use crate::modules::builtin::{
-    echo::Echo
+    echo::Echo,
+    mv::Mv,
+    cd::Cd,
+    exit::Exit,
 };
+use super::comment_doc::CommentDoc;
+use super::comment::Comment;
 
 #[derive(Debug, Clone)]
 pub enum StatementType {
     Expr(Expr),
     VariableInit(VariableInit),
     VariableSet(VariableSet),
-    CommandStatement(CommandStatement),
     IfCondition(IfCondition),
     IfChain(IfChain),
     ShorthandAdd(ShorthandAdd),
@@ -64,8 +64,13 @@ pub enum StatementType {
     Fail(Fail),
     Import(Import),
     Main(Main),
+    Cd(Cd),
     Echo(Echo),
-    CommandModifier(CommandModifier)
+    Mv(Mv),
+    Exit(Exit),
+    CommandModifier(CommandModifier),
+    Comment(Comment),
+    CommentDoc(CommentDoc),
 }
 
 #[derive(Debug, Clone)]
@@ -90,7 +95,9 @@ impl Statement {
         ShorthandMul, ShorthandDiv,
         ShorthandModulo,
         // Command
-        CommandModifier, CommandStatement, Echo, 
+        CommandModifier, Echo, Mv, Cd, Exit,
+        // Comment doc
+        CommentDoc, Comment,
         // Expression
         Expr
     ]);
@@ -104,9 +111,16 @@ impl Statement {
         match syntax(meta, &mut module) {
             Ok(()) => {
                 self.value = Some(cb(module));
-                Ok(())    
+                Ok(())
             }
             Err(details) => Err(details)
+        }
+    }
+
+    pub fn get_docs_item_name(&self) -> Option<String> {
+        match &self.value {
+            Some(StatementType::FunctionDeclaration(inner)) => Some(inner.name.clone()),
+            _ => None,
         }
     }
 }
@@ -124,13 +138,6 @@ impl SyntaxModule<ParserMetadata> for Statement {
         let mut error = None;
         let statements = self.get_modules();
         for statement in statements {
-            // Handle comments
-            if let Some(token) = meta.get_current_token() {
-                if token.word.starts_with("//") {
-                    meta.increment_index();
-                    continue
-                }
-            }
             // Try to parse the statement
             match self.parse_match(meta, statement) {
                 Ok(()) => return Ok(()),
@@ -148,16 +155,28 @@ impl SyntaxModule<ParserMetadata> for Statement {
 
 impl TranslateModule for Statement {
     fn translate(&self, meta: &mut TranslateMetadata) -> String {
-        // Translate the statement
-        let translated = self.translate_match(meta, self.value.as_ref().unwrap());
+        // Translate the staxtement
+        let statement = self.value.as_ref().unwrap();
         // This is a workaround that handles $(...) which cannot be used as a statement
-        let translated = (matches!(self.value, Some(StatementType::Expr(_))) || translated.starts_with("$(") || translated.starts_with("\"$("))
-            .then(|| format!("echo {} > /dev/null 2>&1", translated))
-            .unwrap_or(translated);
+        let translated = match statement {
+            StatementType::Expr(expr) => match &expr.value {
+                Some(ExprType::Command(cmd)) => cmd.translate_command_statement(meta),
+                _ => format!("echo {} > /dev/null 2>&1", self.translate_match(meta, statement))
+            },
+            _ => self.translate_match(meta, statement)
+        };
         // Get all the required supplemental statements
         let indentation = meta.gen_indent();
-        let statements = meta.stmt_queue.drain(..).map(|st| indentation.clone() + &st + ";\n").join("");
+        let statements = meta.stmt_queue.drain(..).map(|st| indentation.clone() + st.trim_end_matches(';') + ";\n").join("");
         // Return all the statements
         statements + &indentation + &translated
+    }
+}
+
+impl DocumentationModule for Statement {
+    fn document(&self, meta: &ParserMetadata) -> String {
+        // Document the statement
+        let documented = self.document_match(meta, self.value.as_ref().unwrap());
+        documented
     }
 }

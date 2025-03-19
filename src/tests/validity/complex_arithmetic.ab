@@ -1,0 +1,7 @@
+// Output
+// 27
+
+let x = 21
+let y = 2
+let z = 3
+echo x + y * z

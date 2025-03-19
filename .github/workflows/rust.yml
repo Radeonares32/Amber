@@ -1,20 +1,58 @@
-name: Rust
+name: Cargo & Clippy Test
 
 on:
-  pull_request_target:
-    branches:
-      - master
+  push:
+    branches: [master]
+    paths:
+      - src/**
+      - test_files/**
+      - .cargo/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - flake.nix
+      - flake.lock
+  pull_request:
+    paths:
+      - src/**
+      - test_files/**
+      - .cargo/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - flake.nix
+      - flake.lock
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build_and_test:
+    name: Rust and clippy tests
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run validity tests
-      run: cargo test validity --verbose
+      - uses: actions/checkout@v4
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: bc shfmt
+          version: 1.0
+      - name: Install bshchk
+        run: |
+          sudo curl https://github.com/b1ek/bshchk/releases/download/1.1/bshchk.linux.amd64 -L -o /usr/bin/bshchk
+          sudo chmod +x /usr/bin/bshchk
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache dependencies installed with cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ./target/deps
+            ~/.cargo
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      - name: Build binary
+        # the binary will be used by the next cargo test step
+        run: cargo build
+      - name: Run cargo tests
+        run: cargo test --all-targets --all-features
+      - name: Run clippy check
+        run: cargo clippy --all-targets --all-features -- -D warnings

@@ -1,6 +1,8 @@
 use heraclitus_compiler::prelude::*;
-use crate::modules::expression::{expr::Expr, binop::expression_arms_of_type};
-use crate::modules::variable::{variable_name_extensions, handle_variable_reference};
+use crate::docs::module::DocumentationModule;
+use crate::error_type_match;
+use crate::modules::expression::expr::Expr;
+use crate::modules::variable::{handle_variable_reference, prevent_constant_mutation, variable_name_extensions};
 use crate::translate::compute::translate_computation_eval;
 use crate::utils::{ParserMetadata, TranslateMetadata};
 use crate::translate::{module::TranslateModule, compute::{ArithOp, translate_computation}};
@@ -31,36 +33,47 @@ impl SyntaxModule<ParserMetadata> for ShorthandMul {
     fn parse(&mut self, meta: &mut ParserMetadata) -> SyntaxResult {
         let var_tok = meta.get_current_token();
         self.var = variable(meta, variable_name_extensions())?;
-        let tok = meta.get_current_token();
         token(meta, "*=")?;
-        let variable = handle_variable_reference(meta, var_tok, &self.var)?;
+        let variable = handle_variable_reference(meta, &var_tok, &self.var)?;
+        prevent_constant_mutation(meta, &var_tok, &self.var, variable.is_const)?;
         self.kind = variable.kind;
         self.global_id = variable.global_id;
         self.is_ref = variable.is_ref;
-        self.expr.parse(meta)?;
-        let message = "Multiplication operation can only multiply numbers";
-        let predicate = |kind| matches!(kind, Type::Num);
-        expression_arms_of_type(meta, &self.kind, &self.expr.get_type(), predicate, tok, message)?;
+        syntax(meta, &mut *self.expr)?;
+        if self.kind != self.expr.get_type() || !matches!(self.kind, Type::Num) {
+            let msg = self.expr.get_error_message(meta);
+            return error_type_match!(meta, msg, "multiply", self.expr, [Num, Text, Array]);
+        }
         Ok(())
     }
 }
 
 impl TranslateModule for ShorthandMul {
+    //noinspection DuplicatedCode
     fn translate(&self, meta: &mut TranslateMetadata) -> String {
-        let expr = self.is_ref
-            .then(|| self.expr.translate_eval(meta, true))
-            .unwrap_or_else(|| self.expr.translate(meta));
-        let name = match self.global_id {
-            Some(id) => format!("__{id}_{}", self.var),
-            None => if self.is_ref { format!("${{{}}}", self.var) } else { self.var.clone() }
-        };
-        let var = if self.is_ref { format!("\\${{{name}}}") } else { format!("${{{name}}}") };
-        if self.is_ref {
-            let expr = translate_computation_eval(meta, ArithOp::Mul, Some(var), Some(expr));
-            format!("eval \"{}={}\"", name, expr)
+        let name = if let Some(id) = self.global_id {
+            format!("__{id}_{}", self.var)
+        } else if self.is_ref {
+            format!("${{{}}}", self.var)
         } else {
+            self.var.clone()
+        };
+        if self.is_ref {
+            let var = format!("\\${{{name}}}");
+            let expr = self.expr.translate_eval(meta, true);
+            let expr = translate_computation_eval(meta, ArithOp::Mul, Some(var), Some(expr));
+            format!("eval \"{name}={expr}\"")
+        } else {
+            let var = format!("${{{name}}}");
+            let expr = self.expr.translate(meta);
             let expr = translate_computation(meta, ArithOp::Mul, Some(var), Some(expr));
-            format!("{}={}", name, expr)
+            format!("{name}={expr}")
         }
+    }
+}
+
+impl DocumentationModule for ShorthandMul {
+    fn document(&self, _meta: &ParserMetadata) -> String {
+        "".to_string()
     }
 }

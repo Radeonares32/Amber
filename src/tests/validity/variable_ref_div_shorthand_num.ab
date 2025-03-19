@@ -1,0 +1,10 @@
+// Output
+// 5
+
+fun foo(ref a) {
+    a /= 3
+}
+
+let a = 15
+foo(a)
+echo a

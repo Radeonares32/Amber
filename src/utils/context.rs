@@ -1,8 +1,9 @@
+use super::{cc_flags::CCFlags, function_interface::FunctionInterface};
+use crate::modules::expression::expr::Expr;
+use crate::modules::types::Type;
+use amber_meta::ContextHelper;
 use heraclitus_compiler::prelude::*;
 use std::collections::{HashMap, HashSet};
-use crate::modules::types::Type;
-
-use super::{function_interface::FunctionInterface, cc_flags::CCFlags};
 
 #[derive(Clone, Debug)]
 pub struct FunctionDecl {
@@ -10,11 +11,12 @@ pub struct FunctionDecl {
     pub arg_names: Vec<String>,
     pub arg_types: Vec<Type>,
     pub arg_refs: Vec<bool>,
+    pub arg_optionals: Vec<Expr>,
     pub returns: Type,
     pub is_args_typed: bool,
     pub is_public: bool,
     pub is_failable: bool,
-    pub id: usize
+    pub id: usize,
 }
 
 impl FunctionDecl {
@@ -25,9 +27,10 @@ impl FunctionDecl {
             arg_names: self.arg_names,
             arg_types: self.arg_types,
             arg_refs: self.arg_refs,
+            arg_optionals: self.arg_optionals,
             returns: self.returns,
             is_public: self.is_public,
-            is_failable: self.is_failable
+            is_failable: self.is_failable,
         }
     }
 }
@@ -37,13 +40,14 @@ pub struct VariableDecl {
     pub name: String,
     pub kind: Type,
     pub global_id: Option<usize>,
-    pub is_ref: bool
+    pub is_ref: bool,
+    pub is_const: bool,
 }
 
 #[derive(Clone, Debug)]
 pub struct ScopeUnit {
     pub vars: HashMap<String, VariableDecl>,
-    pub funs: HashMap<String, FunctionDecl>
+    pub funs: HashMap<String, FunctionDecl>,
 }
 
 /// Perform methods just on the scope
@@ -51,7 +55,7 @@ impl ScopeUnit {
     pub fn new() -> ScopeUnit {
         ScopeUnit {
             vars: HashMap::new(),
-            funs: HashMap::new()
+            funs: HashMap::new(),
         }
     }
 
@@ -91,7 +95,7 @@ impl ScopeUnit {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, ContextHelper)]
 pub struct Context {
     /// The current index in the expression
     pub index: usize,
@@ -106,17 +110,19 @@ pub struct Context {
     /// Determines if the context is in a function
     pub is_fun_ctx: bool,
     /// Determines if the context is in a loop
+    #[context]
     pub is_loop_ctx: bool,
     /// Determines if the context is in the main block
     pub is_main_ctx: bool,
-    /// Determines if the context is in an unsafe block
-    pub is_unsafe_ctx: bool,
+    /// Determines if the context is in a trust block
+    pub is_trust_ctx: bool,
     /// This is a list of ids of all the public functions in the file
     pub pub_funs: Vec<FunctionDecl>,
     /// The return type of the currently parsed function
     pub fun_ret_type: Option<Type>,
     /// List of compiler flags
-    pub cc_flags: HashSet<CCFlags>
+    #[context]
+    pub cc_flags: HashSet<CCFlags>,
 }
 
 // FIXME: Move the scope related structures to the separate file
@@ -131,10 +137,10 @@ impl Context {
             is_fun_ctx: false,
             is_loop_ctx: false,
             is_main_ctx: false,
-            is_unsafe_ctx: false,
+            is_trust_ctx: false,
             pub_funs: vec![],
             fun_ret_type: None,
-            cc_flags: HashSet::new()
+            cc_flags: HashSet::new(),
         }
     }
 

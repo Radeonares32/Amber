@@ -1,4 +1,5 @@
 use heraclitus_compiler::prelude::*;
+use crate::docs::module::DocumentationModule;
 use crate::modules::expression::expr::Expr;
 use crate::modules::types::{Type, Typed};
 use crate::utils::metadata::{ParserMetadata, TranslateMetadata};
@@ -77,9 +78,16 @@ impl TranslateModule for Fail {
             format!("exit {translate}")
         } else {
             // Clean the return value if the function fails
-            let (name, id, variant) = meta.fun_name.clone().expect("Function name not set");
-            meta.stmt_queue.push_back(format!("__AF_{name}{id}_v{variant}=''"));
+            let fun_meta = meta.fun_meta.as_ref().expect("Function name and return type not set");
+            let stmt = format!("{}={}", fun_meta.mangled_name(), fun_meta.default_return());
+            meta.stmt_queue.push_back(stmt);
             format!("return {translate}")
         }
+    }
+}
+
+impl DocumentationModule for Fail {
+    fn document(&self, _meta: &ParserMetadata) -> String {
+        "".to_string()
     }
 }

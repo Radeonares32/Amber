@@ -1,0 +1,10 @@
+// Output
+// one
+
+fun foo(ref a) {
+    a = "one"
+}
+
+let a = "two"
+foo(a)
+echo a

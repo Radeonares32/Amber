@@ -1,0 +1,17 @@
+// Output
+// 24
+// 12
+
+fun swap(ref a, ref b) {
+    let temp = a
+    a = b
+    b = temp
+}
+
+let a = 12
+let b = 24
+
+swap(a, b)
+
+echo a
+echo b

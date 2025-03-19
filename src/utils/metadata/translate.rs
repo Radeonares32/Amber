@@ -1,7 +1,12 @@
 use std::collections::VecDeque;
 
-use crate::{translate::compute::ArithType, utils::function_cache::FunctionCache};
+use crate::compiler::CompilerOptions;
+use crate::translate::compute::ArithType;
+use crate::utils::function_cache::FunctionCache;
+use crate::utils::function_metadata::FunctionMetadata;
 use super::ParserMetadata;
+
+const INDENT_SPACES: &str = "    ";
 
 pub struct TranslateMetadata {
     /// The arithmetic module that is used to evaluate math.
@@ -11,37 +16,41 @@ pub struct TranslateMetadata {
     /// A queue of statements that are needed to be evaluated
     /// before current statement in order to be correct.
     pub stmt_queue: VecDeque<String>,
-    /// The name of the function that is currently being translated.
-    pub fun_name: Option<(String, usize, usize)>,
-    /// Array id is used to determine the array that is being evaluated.
-    pub array_id: usize,
-    /// Value ID - used to store values in variables.
+    /// The metadata of the function that is currently being translated.
+    pub fun_meta: Option<FunctionMetadata>,
+    /// Used to determine the value or array being evaluated.
     pub value_id: usize,
     /// Determines whether the current context is a context in bash's `eval`.
     pub eval_ctx: bool,
     /// Determines whether the current context should be silenced.
     pub silenced: bool,
     /// The current indentation level.
-    pub indent: i64
+    pub indent: i64,
+    /// Determines if minify flag was set.
+    pub minify: bool
 }
 
 impl TranslateMetadata {
-    pub fn new(meta: ParserMetadata) -> Self {
+    pub fn new(meta: ParserMetadata, options: &CompilerOptions) -> Self {
         TranslateMetadata {
             arith_module: ArithType::BcSed,
             fun_cache: meta.fun_cache,
-            fun_name: None,
+            fun_meta: None,
             stmt_queue: VecDeque::new(),
-            array_id: 0,
             value_id: 0,
             eval_ctx: false,
             silenced: false,
-            indent: -1
+            indent: -1,
+            minify: options.minify,
         }
     }
 
+    pub fn single_indent() -> String {
+        INDENT_SPACES.to_string()
+    }
+
     pub fn gen_indent(&self) -> String {
-        "    ".repeat(self.indent as usize)
+        INDENT_SPACES.repeat(self.indent as usize)
     }
 
     pub fn increase_indent(&mut self) {
@@ -50,12 +59,6 @@ impl TranslateMetadata {
 
     pub fn decrease_indent(&mut self) {
         self.indent -= 1;
-    }
-
-    pub fn gen_array_id(&mut self) -> usize {
-        let id = self.array_id;
-        self.array_id += 1;
-        id
     }
 
     pub fn gen_value_id(&mut self) -> usize {

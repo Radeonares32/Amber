@@ -1,0 +1,9 @@
+import * from "std/text"
+
+// Output
+// banana
+
+main {
+    let array = split("apple,banana,cherry", ",")
+    echo array[1]
+}

@@ -3,14 +3,42 @@ use std::fmt::Display;
 use heraclitus_compiler::prelude::*;
 use crate::utils::ParserMetadata;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Type {
+    #[default] Null,
     Text,
     Bool,
     Num,
-    Null,
     Array(Box<Type>),
+    Failable(Box<Type>),
     Generic
+}
+
+impl Type {
+    pub fn is_subset_of(&self, other: &Type) -> bool {
+        match (self, other) {
+            (_, Type::Generic) => true,
+            (Type::Array(current), Type::Array(other)) => {
+                **current != Type::Generic && **other == Type::Generic
+            }
+            (current, Type::Failable(other)) if !matches!(current, Type::Failable(_)) => {
+                current.is_allowed_in(other)
+            },
+            _ => false
+        }
+    }
+
+    pub fn is_allowed_in(&self, other: &Type) -> bool {
+        self == other || self.is_subset_of(other)
+    }
+
+    pub fn is_array(&self) -> bool {
+        match self {
+            Type::Array(_) => true,
+            Type::Failable(inner) => inner.is_array(),
+            _ => false,
+        }
+    }
 }
 
 impl Display for Type {
@@ -20,7 +48,12 @@ impl Display for Type {
             Type::Bool => write!(f, "Bool"),
             Type::Num => write!(f, "Num"),
             Type::Null => write!(f, "Null"),
-            Type::Array(t) => write!(f, "[{}]", t),
+            Type::Array(t) => if **t == Type::Generic {
+                    write!(f, "[]")
+                } else {
+                    write!(f, "[{}]", t)
+                },
+            Type::Failable(t) => write!(f, "{}?", t),
             Type::Generic => write!(f, "Generic")
         }
     }
@@ -40,7 +73,7 @@ pub fn parse_type(meta: &mut ParserMetadata) -> Result<Type, Failure> {
 // Tries to parse the type - if it fails, it fails quietly
 pub fn try_parse_type(meta: &mut ParserMetadata) -> Result<Type, Failure> {
     let tok = meta.get_current_token();
-    match tok.clone() {
+    let res = match tok.clone() {
         Some(matched_token) => {
             match matched_token.word.as_ref() {
                 "Text" => {
@@ -62,15 +95,19 @@ pub fn try_parse_type(meta: &mut ParserMetadata) -> Result<Type, Failure> {
                 "[" => {
                     let index = meta.get_index();
                     meta.increment_index();
-                    match try_parse_type(meta) {
-                        Ok(Type::Array(_)) => error!(meta, tok, "Arrays cannot be nested due to the Bash limitations"),
-                        Ok(result_type) => {
-                            token(meta, "]")?;
-                            Ok(Type::Array(Box::new(result_type)))
-                        },
-                        Err(_) => {
-                            meta.set_index(index);
-                            Err(Failure::Quiet(PositionInfo::at_eof(meta)))
+                    if token(meta, "]").is_ok() {
+                        Ok(Type::Array(Box::new(Type::Generic)))
+                    } else {
+                        match try_parse_type(meta) {
+                            Ok(Type::Array(_)) => error!(meta, tok, "Arrays cannot be nested due to the Bash limitations"),
+                            Ok(result_type) => {
+                                token(meta, "]")?;
+                                Ok(Type::Array(Box::new(result_type)))
+                            },
+                            Err(_) => {
+                                meta.set_index(index);
+                                Err(Failure::Quiet(PositionInfo::at_eof(meta)))
+                            }
                         }
                     }
                 },
@@ -97,5 +134,69 @@ pub fn try_parse_type(meta: &mut ParserMetadata) -> Result<Type, Failure> {
         None => {
             Err(Failure::Quiet(PositionInfo::at_eof(meta)))
         }
+    };
+
+    if token(meta, "?").is_ok() {
+        return res.map(|t| Type::Failable(Box::new(t)))
+    }
+
+    res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Type;
+
+    #[test]
+    fn concrete_array_is_a_subset_of_generic_array() {
+        let a = Type::Array(Box::new(Type::Text));
+        let b = Type::Array(Box::new(Type::Generic));
+
+        assert!(a.is_subset_of(&b));
+    }
+
+    #[test]
+    fn generic_array_is_not_a_subset_of_concrete_array() {
+        let a = Type::Array(Box::new(Type::Text));
+        let b = Type::Array(Box::new(Type::Generic));
+
+        assert!(!b.is_subset_of(&a));
+    }
+
+    #[test]
+    fn concrete_array_is_not_a_subset_of_itself() {
+        let a = Type::Array(Box::new(Type::Text));
+
+        assert!(!a.is_subset_of(&a));
+    }
+
+    #[test]
+    fn generic_array_is_not_a_subset_of_itself() {
+        let a = Type::Array(Box::new(Type::Generic));
+
+        assert!(!a.is_subset_of(&a));
+    }
+
+    #[test]
+    fn non_failable_is_a_subset_of_failable() {
+        let a = Type::Text;
+        let b = Type::Failable(Box::new(Type::Text));
+
+        assert!(a.is_subset_of(&b));
+    }
+
+    #[test]
+    fn failable_is_not_a_subset_of_non_failable() {
+        let a = Type::Text;
+        let b = Type::Failable(Box::new(Type::Text));
+
+        assert!(!b.is_subset_of(&a));
+    }
+
+    #[test]
+    fn failable_is_not_a_subset_of_itself() {
+        let a = Type::Failable(Box::new(Type::Text));
+
+        assert!(!a.is_subset_of(&a));
     }
 }

@@ -1,0 +1,5 @@
+// Output
+// /tmp
+
+cd "/tmp/"
+trust $ pwd $

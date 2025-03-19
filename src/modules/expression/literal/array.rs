@@ -1,5 +1,5 @@
 use heraclitus_compiler::prelude::*;
-use crate::{utils::metadata::ParserMetadata, modules::{types::{Type, Typed, try_parse_type}, expression::expr::Expr}};
+use crate::{docs::module::DocumentationModule, modules::{expression::expr::Expr, types::{try_parse_type, Type, Typed}}, utils::metadata::ParserMetadata};
 use crate::translate::module::TranslateModule;
 use crate::utils::TranslateMetadata;
 
@@ -84,11 +84,17 @@ impl SyntaxModule<ParserMetadata> for Array {
 
 impl TranslateModule for Array {
     fn translate(&self, meta: &mut TranslateMetadata) -> String {
-        let name = format!("__AMBER_ARRAY_{}", meta.gen_array_id());
+        let name = format!("__AMBER_ARRAY_{}", meta.gen_value_id());
         let args = self.exprs.iter().map(|expr| expr.translate_eval(meta, false)).collect::<Vec<String>>().join(" ");
         let quote = meta.gen_quote();
         let dollar = meta.gen_dollar();
         meta.stmt_queue.push_back(format!("{name}=({args})"));
         format!("{quote}{dollar}{{{name}[@]}}{quote}")
+    }
+}
+
+impl DocumentationModule for Array {
+    fn document(&self, _meta: &ParserMetadata) -> String {
+        "".to_string()
     }
 }

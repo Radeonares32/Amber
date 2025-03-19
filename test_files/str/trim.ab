@@ -1,7 +1,0 @@
-pub fun trim(text) {
-    return unsafe $echo "{text}" | xargs$
-}
-
-main {
-    trim("long text")
-}

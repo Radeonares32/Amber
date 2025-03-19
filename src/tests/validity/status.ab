@@ -1,0 +1,8 @@
+// Output
+// 127
+// 127
+
+silent $ non-existent command $ failed {
+    echo status
+    echo status
+}
